@@ -33,6 +33,8 @@ import java.util.concurrent.atomic.AtomicBoolean
  * Keeps one Bluetooth RFCOMM link to the watch alive.
  * The phone is the client: it has the bigger battery, so it does the reconnecting.
  */
+data class VoipCall(val key: String, val app: String, val name: String, val sub: String, val state: String)
+
 class LinkService : Service() {
 
     companion object {
@@ -235,8 +237,13 @@ class LinkService : Service() {
     }
 
     private var prevCallState = "idle"
+    private var telState = "idle"
     private var callNum = ""
     private var callDir = ""
+
+    /** Internet call (WhatsApp, Telegram...) seen through its call notification. */
+    @Volatile var voip: VoipCall? = null
+        private set
 
     private fun onCall(state: Int, number: String?) {
         val st = when (state) {
@@ -255,18 +262,48 @@ class LinkService : Service() {
         if (st == "offhook" && callDir == "out" && prevCallState == "idle") {
             callNum = number.orEmpty().ifEmpty { CallControl.lastDialed() }
         }
-        val num = callNum
-        val name = if (num.isNotEmpty()) lookupName(num) else ""
-        val o = JSONObject().put("t", "call").put("state", st).put("num", num)
-            .put("name", name).put("dir", callDir)
-        lastCall = if (st == "idle") null else o
-        L.i("Call $st ($callDir) ${name.ifEmpty { num }}")
-        send(o)
+        telState = st
         prevCallState = st
+        pushCall()
         if (st == "idle") {
             callNum = ""
             callDir = ""
         }
+    }
+
+    /** The internet call the watch is showing, if any (a normal phone call takes priority). */
+    fun activeVoip(): VoipCall? = voip?.takeIf { telState == "idle" || callNum.isEmpty() }
+
+    /** Called by NotifListener when an internet call starts, changes or ends. */
+    fun onVoip(v: VoipCall?) {
+        val before = voip
+        voip = v
+        if (before?.state != v?.state || before?.name != v?.name) pushCall()
+    }
+
+    /**
+     * Sends one merged call state. A normal phone call wins; otherwise an internet call.
+     * Some Samsung builds also report internet calls as ringing with no number,
+     * so the name from the call notification fills that gap.
+     */
+    private fun pushCall() {
+        val v = activeVoip()
+        val useVoip = v != null
+        val st = if (telState != "idle") telState else v?.state ?: "idle"
+        val num = if (useVoip) "" else callNum
+        val name = when {
+            num.isNotEmpty() -> lookupName(num)
+            v != null -> v.name
+            else -> ""
+        }
+        val o = JSONObject().put("t", "call").put("state", st).put("num", num)
+            .put("name", name)
+            .put("dir", if (useVoip) "in" else callDir)
+            .put("app", if (useVoip) v!!.app else "")
+            .put("sub", if (useVoip) v!!.sub else "")
+        lastCall = if (st == "idle") null else o
+        L.i("Call $st${if (useVoip) " via ${v!!.app}" else ""} ${name.ifEmpty { num }}")
+        send(o)
     }
 
     private fun lookupName(num: String): String {

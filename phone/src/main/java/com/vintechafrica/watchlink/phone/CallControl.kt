@@ -22,6 +22,16 @@ object CallControl {
     @Suppress("DEPRECATION")
     fun run(c: Context, action: String, num: String) {
         val tm = c.getSystemService(TelecomManager::class.java)
+        // Internet call ringing or active and no phone call: use the app's own buttons.
+        val v = LinkService.instance?.activeVoip()
+        if (v != null && action in setOf("answer", "reject", "hangup", "silence")) {
+            when (action) {
+                "answer" -> NotifListener.pressCallAction(v.key, answer = true)
+                "reject", "hangup" -> NotifListener.pressCallAction(v.key, answer = false)
+                "silence" -> silence(c, tm)
+            }
+            return
+        }
         try {
             when (action) {
                 "answer" -> {

@@ -247,7 +247,9 @@ class CallActivity : Activity() {
         body.removeAllViews()
 
         val who = WatchState.callerLabel()
-        body.addView(text(if (st == "ringing") "Incoming call" else elapsed(), 14f,
+        val via = WatchState.callApp
+        val ringLabel = if (via.isNotEmpty()) "Incoming $via call" else "Incoming call"
+        body.addView(text(if (st == "ringing") ringLabel else elapsed(), 14f,
             if (st == "ringing") C.GREEN else C.SUB))
         body.addView(avatar(initial(who), C.avatarColor(who), 76, 32f).apply {
             (layoutParams as LinearLayout.LayoutParams).topMargin = dp(14)
@@ -294,7 +296,12 @@ class CallActivity : Activity() {
 
     private fun elapsed(): String {
         val s = (SystemClock.elapsedRealtime() - answeredAt) / 1000
-        val label = if (WatchState.callDir == "out") "Calling" else "On call"
+        val via = WatchState.callApp
+        val label = when {
+            via.isNotEmpty() -> "$via call"
+            WatchState.callDir == "out" -> "Calling"
+            else -> "On call"
+        }
         return "$label · %d:%02d".format(s / 60, s % 60)
     }
 }

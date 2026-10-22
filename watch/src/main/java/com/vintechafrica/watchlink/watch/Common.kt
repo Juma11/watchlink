@@ -45,6 +45,7 @@ object WatchState {
     @Volatile var callName = ""
     @Volatile var callNum = ""
     @Volatile var callDir = ""
+    @Volatile var callApp = ""   // "WhatsApp" etc. for internet calls, empty for the phone line
     @Volatile var contacts: List<Contact> = emptyList()
     private val notifs = LinkedHashMap<String, Notif>()
     private val listeners = CopyOnWriteArrayList<() -> Unit>()

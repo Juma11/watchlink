@@ -257,6 +257,7 @@ class WatchService : Service() {
         WatchState.callState = st
         WatchState.callName = o.optString("name")
         WatchState.callNum = o.optString("num")
+        WatchState.callApp = if (st == "idle") "" else o.optString("app")
         val prevDir = WatchState.callDir
         WatchState.callDir = o.optString("dir")
         L.i("Call $st (${WatchState.callDir}): ${WatchState.callerLabel()}")
