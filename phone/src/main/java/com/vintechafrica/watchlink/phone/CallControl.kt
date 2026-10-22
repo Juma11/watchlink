@@ -11,6 +11,12 @@ import android.telecom.TelecomManager
 object CallControl {
 
     @Volatile private var mutedRing = false
+    @Volatile private var dialedNum = ""
+    @Volatile private var dialedAt = 0L
+
+    /** Number dialed from the watch in the last 30 seconds, so the call screen can name it. */
+    fun lastDialed(): String =
+        if (System.currentTimeMillis() - dialedAt < 30_000) dialedNum else ""
 
     @SuppressLint("MissingPermission")
     @Suppress("DEPRECATION")
@@ -29,6 +35,8 @@ object CallControl {
                 "silence" -> silence(c, tm)
                 "dial" -> {
                     if (num.isBlank()) return
+                    dialedNum = num
+                    dialedAt = System.currentTimeMillis()
                     tm.placeCall(Uri.fromParts("tel", num, null), Bundle())
                     L.i("Dialing $num from watch")
                 }

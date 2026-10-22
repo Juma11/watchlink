@@ -234,6 +234,10 @@ class LinkService : Service() {
         }
     }
 
+    private var prevCallState = "idle"
+    private var callNum = ""
+    private var callDir = ""
+
     private fun onCall(state: Int, number: String?) {
         val st = when (state) {
             TelephonyManager.CALL_STATE_RINGING -> "ringing"
@@ -241,12 +245,28 @@ class LinkService : Service() {
             else -> "idle"
         }
         if (st != "ringing") CallControl.restoreRinger(this)
-        val num = number.orEmpty()
+        when {
+            st == "ringing" -> callDir = "in"
+            st == "offhook" && prevCallState == "idle" -> callDir = "out"   // you dialed
+        }
+        // Android often sends the number only once; keep it for the rest of the call.
+        if (!number.isNullOrEmpty()) callNum = number
+        if (st == "ringing" && prevCallState == "idle" && number.isNullOrEmpty()) callNum = ""
+        if (st == "offhook" && callDir == "out" && prevCallState == "idle") {
+            callNum = number.orEmpty().ifEmpty { CallControl.lastDialed() }
+        }
+        val num = callNum
         val name = if (num.isNotEmpty()) lookupName(num) else ""
-        val o = JSONObject().put("t", "call").put("state", st).put("num", num).put("name", name)
+        val o = JSONObject().put("t", "call").put("state", st).put("num", num)
+            .put("name", name).put("dir", callDir)
         lastCall = if (st == "idle") null else o
-        L.i("Call $st ${name.ifEmpty { num }}")
+        L.i("Call $st ($callDir) ${name.ifEmpty { num }}")
         send(o)
+        prevCallState = st
+        if (st == "idle") {
+            callNum = ""
+            callDir = ""
+        }
     }
 
     private fun lookupName(num: String): String {

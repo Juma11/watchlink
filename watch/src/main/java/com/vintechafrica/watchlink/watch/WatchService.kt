@@ -261,17 +261,30 @@ class WatchService : Service() {
         WatchState.callState = st
         WatchState.callName = o.optString("name")
         WatchState.callNum = o.optString("num")
-        L.i("Call $st: ${WatchState.callerLabel()}")
+        val prevDir = WatchState.callDir
+        WatchState.callDir = o.optString("dir")
+        L.i("Call $st (${WatchState.callDir}): ${WatchState.callerLabel()}")
+        val openScreen = {
+            // Allowed on Android 8.1: services may open activities.
+            startActivity(
+                Intent(this, CallActivity::class.java)
+                    .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_SINGLE_TOP)
+            )
+        }
         when (st) {
             "ringing" -> {
                 startRinging()
-                // Allowed on Android 8.1: services may open activities.
-                startActivity(
-                    Intent(this, CallActivity::class.java)
-                        .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_SINGLE_TOP)
-                )
+                openScreen()
             }
-            else -> stopRinging()
+            "offhook" -> {
+                stopRinging()
+                // Outgoing call: show it with a Hang up button.
+                if (WatchState.callDir == "out" && prevDir != "out") openScreen()
+            }
+            else -> {
+                stopRinging()
+                WatchState.callDir = ""
+            }
         }
         WatchState.changed()
     }

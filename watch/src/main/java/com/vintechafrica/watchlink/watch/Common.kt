@@ -44,6 +44,7 @@ object WatchState {
     @Volatile var callState = "idle"
     @Volatile var callName = ""
     @Volatile var callNum = ""
+    @Volatile var callDir = ""
     @Volatile var contacts: List<Contact> = emptyList()
     private val notifs = LinkedHashMap<String, Notif>()
     private val listeners = CopyOnWriteArrayList<() -> Unit>()
@@ -66,6 +67,7 @@ object WatchState {
     fun callerLabel(): String = when {
         callName.isNotEmpty() -> callName
         callNum.isNotEmpty() -> callNum
+        callDir == "out" -> "Outgoing call"
         else -> "Unknown caller"
     }
 }

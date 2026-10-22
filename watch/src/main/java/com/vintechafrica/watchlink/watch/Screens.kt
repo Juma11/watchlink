@@ -245,7 +245,8 @@ class CallActivity : Activity() {
 
     private fun elapsed(): String {
         val s = (SystemClock.elapsedRealtime() - answeredAt) / 1000
-        return "On call · %d:%02d".format(s / 60, s % 60)
+        val label = if (WatchState.callDir == "out") "Calling" else "On call"
+        return "$label · %d:%02d".format(s / 60, s % 60)
     }
 }
 
