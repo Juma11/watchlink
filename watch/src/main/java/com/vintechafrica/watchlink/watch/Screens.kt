@@ -45,7 +45,7 @@ class MainActivity : Activity() {
     private val tick = object : Runnable {
         override fun run() {
             render()
-            handler.postDelayed(this, 10_000)
+            handler.postDelayed(this, 30_000)
         }
     }
 
@@ -71,74 +71,123 @@ class MainActivity : Activity() {
         body.removeAllViews()
         val b = Bat.read(this)
 
-        // Status row
-        val (label, color) = when {
-            WatchState.connected -> "● Connected" to C.GREEN
-            WatchService.status == "Bluetooth off" -> "● Bluetooth off" to C.RED
-            else -> "● Waiting for phone" to C.ORANGE
+        // One quiet status line
+        val (dot, label) = when {
+            WatchState.connected -> C.GREEN to WatchState.phoneName.ifEmpty { "Connected" }
+            WatchService.status == "Bluetooth off" -> C.RED to "Bluetooth off"
+            else -> C.ORANGE to "Waiting for phone"
         }
         body.addView(hbox().apply {
-            addView(pill(label, color))
-            addView(text("  ${b.pct}%", 14f, bold = true))
-            addView(text("  ${"%.0f".format(b.tempC)}°C", 14f, if (b.tempC >= 42f) C.ORANGE else C.SUB))
-            if (b.charging) addView(text("  ⚡", 14f, C.GREEN))
+            setPadding(dp(4), dp(2), dp(4), dp(10))
+            addView(text("●", 12f, dot))
+            addView(text("  $label", 13f, C.SUB, lines = 1).apply {
+                layoutParams = LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f)
+            })
+            addView(text("${b.pct}%", 13f, if (b.tempC >= 45f) C.RED else C.SUB))
         })
-        if (WatchState.connected && WatchState.phoneName.isNotEmpty()) {
-            body.addView(text(WatchState.phoneName, 12f, C.SUB).apply { setPadding(0, dp(4), 0, 0) })
-        }
+
         if (b.tempC >= 45f) {
             body.addView(card().apply {
                 background = rounded(C.RED)
-                addView(text("Watch is hot (${"%.0f".format(b.tempC)}°C)", 14f, bold = true))
-                addView(text("Unplug it and leave the screen off until it cools.", 12f))
+                addView(text("Hot: ${"%.0f".format(b.tempC)}°C. Let it cool.", 13f, bold = true))
+            })
+        }
+        if (needsSetup()) {
+            body.addView(tile("!", "Finish setup", "Two permissions needed", C.ORANGE) {
+                startActivity(Intent(this, SettingsActivity::class.java))
             })
         }
 
         val notifs = WatchState.notifList()
-        val latest = notifs.firstOrNull()
         body.addView(tile(
-            "🔔", "Notifications${if (notifs.isNotEmpty()) " · ${notifs.size}" else ""}",
-            latest?.let { "${it.app}: ${it.title}" } ?: "Nothing new", C.BLUE
+            "🔔", "Notifications",
+            notifs.firstOrNull()?.let { "${notifs.size} · ${it.app}" } ?: "All caught up", C.BLUE
         ) { startActivity(Intent(this, NotifActivity::class.java)) })
 
-        body.addView(tile(
-            "👤", "Contacts",
-            if (WatchState.contacts.isEmpty()) "Not synced yet" else "${WatchState.contacts.size} from phone",
-            C.GREEN
+        body.addView(tile("👤", "Contacts",
+            if (WatchState.contacts.isEmpty()) "Tap to sync" else "${WatchState.contacts.size} contacts", C.GREEN
         ) { startActivity(Intent(this, ContactsActivity::class.java)) })
 
-        body.addView(tile("🔋", "Battery saver", "Wi-Fi, screen, airplane", C.ORANGE) {
+        body.addView(tile("🔋", "Battery", "${b.pct}% · ${"%.0f".format(b.tempC)}°C", C.ORANGE) {
             startActivity(Intent(this, BatteryActivity::class.java))
         })
 
+        body.addView(tile("⚙", "Settings", null, C.CARD2) {
+            startActivity(Intent(this, SettingsActivity::class.java))
+        })
+    }
+
+    private fun needsSetup(): Boolean {
+        val pm = getSystemService(android.os.PowerManager::class.java)
+        return !Alerts.canBanner(this) || !pm.isIgnoringBatteryOptimizations(packageName)
+    }
+}
+
+// ================= settings =================
+
+class SettingsActivity : Activity() {
+    private lateinit var body: LinearLayout
+
+    override fun onCreate(savedInstanceState: Bundle?) {
+        super.onCreate(savedInstanceState)
+        body = screen {}
+    }
+
+    override fun onResume() {
+        super.onResume()
+        render()
+    }
+
+    private fun render() {
+        body.removeAllViews()
+        body.addView(header("Settings"))
+
+        val banner = Alerts.canBanner(this)
+        body.addView(tile("⬇", "Banners on top", if (banner) "Allowed" else "Tap to allow", if (banner) C.GREEN else C.ORANGE) {
+            if (!banner) open(Intent(
+                android.provider.Settings.ACTION_MANAGE_OVERLAY_PERMISSION,
+                android.net.Uri.parse("package:$packageName")
+            ))
+        })
+
+        val pm = getSystemService(android.os.PowerManager::class.java)
+        val bg = pm.isIgnoringBatteryOptimizations(packageName)
+        body.addView(tile("🔒", "Work when locked", if (bg) "Allowed" else "Tap to allow", if (bg) C.GREEN else C.ORANGE) {
+            if (!bg) {
+                @android.annotation.SuppressLint("BatteryLife")
+                val i = Intent(
+                    android.provider.Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS,
+                    android.net.Uri.parse("package:$packageName")
+                )
+                open(i)
+            }
+        })
+
         val pop = WPrefs.popups(this)
-        body.addView(tile("💬", "Popups: ${if (pop) "On" else "Off"}",
-            if (pop) "New messages light the screen" else "Silent, check the list", C.PURPLE) {
+        body.addView(tile("💬", "Alerts", if (pop) "On" else "Off, list only", if (pop) C.BLUE else C.CARD2) {
             WPrefs.setPopups(this, !pop)
             render()
         })
 
-        val pm = getSystemService(android.os.PowerManager::class.java)
-        if (!pm.isIgnoringBatteryOptimizations(packageName)) {
-            body.addView(tile("⚠", "Allow running when locked", "Tap, then choose Allow", C.RED) {
-                try {
-                    @android.annotation.SuppressLint("BatteryLife")
-                    val i = Intent(
-                        android.provider.Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS,
-                        android.net.Uri.parse("package:$packageName")
-                    )
-                    startActivity(i)
-                } catch (e: Exception) {
-                    startActivity(Intent(android.provider.Settings.ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS))
-                }
+        val muted = WPrefs.muted(this)
+        if (muted.isNotEmpty()) {
+            body.addView(tile("🔕", "Muted apps", muted.sorted().joinToString(", "), C.CARD2) {
+                muted.forEach { WPrefs.toggleMute(this, it) }
+                toast("All apps unmuted")
+                render()
             })
         }
-        body.addView(tile("🧾", "Log", "For troubleshooting", C.CARD2) {
-            startActivity(Intent(this, LogActivity::class.java))
-        })
+
         body.addView(tile("📶", "Bluetooth test", null, C.CARD2) {
             startActivity(Intent(this, BleTestActivity::class.java))
         })
+        body.addView(tile("🧾", "Log", null, C.CARD2) {
+            startActivity(Intent(this, LogActivity::class.java))
+        })
+    }
+
+    private fun open(i: Intent) {
+        try { startActivity(i) } catch (e: Exception) { toast("Not available on this watch") }
     }
 }
 
@@ -340,7 +389,7 @@ class NotifDetailActivity : Activity() {
     }
 }
 
-// ================= popup for new notifications =================
+// ================= lock-screen card for new notifications =================
 
 class NotifPopupActivity : Activity() {
     private val handler = Handler(Looper.getMainLooper())
@@ -371,38 +420,33 @@ class NotifPopupActivity : Activity() {
             finish()
             return
         }
-        wakeScreen(9_000)
+        wakeScreen(7_000)
         handler.removeCallbacks(autoClose)
-        handler.postDelayed(autoClose, 8_000)
+        handler.postDelayed(autoClose, 6_000)
 
         val col = vbox().apply {
-            gravity = Gravity.CENTER_VERTICAL
             setBackgroundColor(C.BG)
-            setPadding(dp(14), dp(14), dp(14), dp(14))
+            setPadding(dp(10), dp(8), dp(10), dp(10))
+            isClickable = true
+            setOnClickListener { finish() }
         }
-        val c = card {
+        col.addView(card {
             handler.removeCallbacks(autoClose)
             startActivity(Intent(this, NotifDetailActivity::class.java).putExtra("key", n.key))
             finish()
         }.apply {
+            background = rounded(C.CARD2, 22)
             addView(hbox().apply {
-                addView(avatar(initial(n.app), C.avatarColor(n.app), 36, 16f))
-                addView(text("  ${n.app}", 14f, C.SUB, bold = true, lines = 1))
+                addView(avatar(initial(n.app), C.avatarColor(n.app), 30, 13f))
+                addView(text("  ${n.app} · now", 12f, C.SUB, lines = 1))
             })
-            if (n.title.isNotEmpty()) addView(text(n.title, 18f, bold = true, lines = 2).apply { setPadding(0, dp(8), 0, 0) })
-            addView(text(n.text, 15f, lines = 6).apply { setPadding(0, dp(4), 0, 0) })
-            if (extra > 0) addView(text("+$extra more", 12f, C.BLUE).apply { setPadding(0, dp(6), 0, 0) })
-        }
-        col.addView(c)
-        col.addView(hbox().apply {
-            layoutParams = matchWrap(6, this@NotifPopupActivity)
-            addView(action("Dismiss", C.RED) {
-                dismissNotif(n)
-                finish()
-            }.apply { (layoutParams as LinearLayout.LayoutParams).apply { width = 0; weight = 1f; rightMargin = dp(4) } })
-            addView(action("Close", C.CARD2) { finish() }.apply {
-                (layoutParams as LinearLayout.LayoutParams).apply { width = 0; weight = 1f; leftMargin = dp(4) }
-            })
+            if (n.title.isNotEmpty()) addView(text(n.title, 16f, bold = true, lines = 1).apply { setPadding(0, dp(6), 0, 0) })
+            addView(text(n.text, 14f, lines = 4))
+            if (extra > 0) addView(text("+$extra more", 12f, C.BLUE).apply { setPadding(0, dp(4), 0, 0) })
+        })
+        col.addView(text("Tap to open · tap outside to close", 11f, C.SUB).apply {
+            gravity = Gravity.CENTER
+            setPadding(0, dp(10), 0, 0)
         })
         setContentView(col)
     }

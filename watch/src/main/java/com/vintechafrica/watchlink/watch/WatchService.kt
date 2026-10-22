@@ -224,11 +224,7 @@ class WatchService : Service() {
                 showMirror(n, quiet = sync || muted || !isNew)
                 WatchState.changed()
                 if (isNew && !sync && !muted && WPrefs.popups(this) && WatchState.callState == "idle") {
-                    startActivity(
-                        Intent(this, NotifPopupActivity::class.java)
-                            .putExtra("key", n.key)
-                            .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_SINGLE_TOP)
-                    )
+                    Alerts.show(this, n)
                 }
             }
             "notif_rm" -> {
@@ -273,6 +269,7 @@ class WatchService : Service() {
         }
         when (st) {
             "ringing" -> {
+                Alerts.remove(animated = false)
                 startRinging()
                 openScreen()
             }
