@@ -118,6 +118,21 @@ class MainActivity : Activity() {
             render()
         })
 
+        val pm = getSystemService(android.os.PowerManager::class.java)
+        if (!pm.isIgnoringBatteryOptimizations(packageName)) {
+            body.addView(tile("⚠", "Allow running when locked", "Tap, then choose Allow", C.RED) {
+                try {
+                    @android.annotation.SuppressLint("BatteryLife")
+                    val i = Intent(
+                        android.provider.Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS,
+                        android.net.Uri.parse("package:$packageName")
+                    )
+                    startActivity(i)
+                } catch (e: Exception) {
+                    startActivity(Intent(android.provider.Settings.ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS))
+                }
+            })
+        }
         body.addView(tile("🧾", "Log", "For troubleshooting", C.CARD2) {
             startActivity(Intent(this, LogActivity::class.java))
         })

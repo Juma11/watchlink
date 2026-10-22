@@ -11,9 +11,11 @@ import android.bluetooth.BluetoothSocket
 import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
+import android.content.IntentFilter
 import android.content.pm.ServiceInfo
 import android.os.Build
 import android.os.IBinder
+import android.os.PowerManager
 import android.os.VibrationEffect
 import android.os.Vibrator
 import org.json.JSONObject
@@ -35,8 +37,8 @@ class WatchService : Service() {
         @Volatile var status: String = "Stopped"
         private const val NOTIF_ID = 1
         const val CH_SERVICE = "service"
-        const val CH_ALERT = "alert"
-        const val CH_QUIET = "quiet"
+        const val CH_ALERT = "alert2"
+        const val CH_QUIET = "quiet2"
 
         fun start(c: Context) {
             c.startForegroundService(Intent(c, WatchService::class.java))
@@ -66,12 +68,17 @@ class WatchService : Service() {
         }
         running = true
         worker = Thread({ serverLoop() }, "wl-server").also { it.start() }
+        registerReceiver(screenLog, IntentFilter().apply {
+            addAction(Intent.ACTION_SCREEN_OFF)
+            addAction(Intent.ACTION_SCREEN_ON)
+        })
         L.i("Watch service started")
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int = START_STICKY
 
     override fun onDestroy() {
+        try { unregisterReceiver(screenLog) } catch (_: Exception) {}
         running = false
         try { server?.close() } catch (_: Exception) {}
         try { socket?.close() } catch (_: Exception) {}
@@ -181,7 +188,20 @@ class WatchService : Service() {
         L.i("Sent command: $action")
     }
 
+    /** Logs screen changes so the log shows if the link survives the lock screen. */
+    private val screenLog = object : BroadcastReceiver() {
+        override fun onReceive(c: Context, i: Intent) {
+            L.i("Screen ${if (i.action == Intent.ACTION_SCREEN_OFF) "off" else "on"}, link ${if (WatchState.connected) "up" else "down"}")
+        }
+    }
+
+    private val msgLock by lazy {
+        getSystemService(PowerManager::class.java).newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "watchlink:msg")
+    }
+
     private fun handle(line: String) {
+        // Keep the CPU awake briefly so a message that arrives in standby is fully handled.
+        try { msgLock.acquire(3_000) } catch (_: Exception) {}
         val o = try { JSONObject(line) } catch (e: Exception) {
             L.i("Bad message from phone")
             return
@@ -298,6 +318,7 @@ class WatchService : Service() {
             .setAutoCancel(true)
             .setContentIntent(open)
             .setDeleteIntent(del)
+            .setVisibility(Notification.VISIBILITY_PUBLIC)
             .build()
         getSystemService(NotificationManager::class.java).notify(mirrorId(n.key), notif)
     }
@@ -332,14 +353,18 @@ class WatchService : Service() {
         )
         nm.createNotificationChannel(
             NotificationChannel(CH_ALERT, "Phone notifications", NotificationManager.IMPORTANCE_HIGH).apply {
+                lockscreenVisibility = Notification.VISIBILITY_PUBLIC
                 enableVibration(true)
                 vibrationPattern = longArrayOf(0, 150, 100, 150)
                 setSound(null, null)
             }
         )
         nm.createNotificationChannel(
-            NotificationChannel(CH_QUIET, "Synced notifications", NotificationManager.IMPORTANCE_LOW)
+            NotificationChannel(CH_QUIET, "Synced notifications", NotificationManager.IMPORTANCE_LOW).apply {
+                lockscreenVisibility = Notification.VISIBILITY_PUBLIC
+            }
         )
+        listOf("alert", "quiet").forEach { try { nm.deleteNotificationChannel(it) } catch (_: Exception) {} }
     }
 
     private fun buildNotif(text: String): Notification {
