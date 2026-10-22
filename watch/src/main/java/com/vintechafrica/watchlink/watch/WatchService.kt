@@ -106,7 +106,8 @@ class WatchService : Service() {
                 s = accepted
                 socket = accepted
                 WatchState.connected = true
-                setStatus("Connected to ${accepted.remoteDevice?.name ?: "phone"}")
+                WatchState.phoneName = accepted.remoteDevice?.name ?: "phone"
+                setStatus("Connected to ${WatchState.phoneName}")
                 WatchState.changed()
                 runConnection(accepted)
             } catch (e: Exception) {
@@ -195,9 +196,20 @@ class WatchService : Service() {
                     o.optString("key"), o.optString("app"), o.optString("title"),
                     o.optString("text"), o.optLong("time", System.currentTimeMillis())
                 )
+                val old = WatchState.notifList().firstOrNull { it.key == n.key }
+                val isNew = old == null || old.text != n.text || old.title != n.title
+                val sync = o.optBoolean("sync", false)
+                val muted = WPrefs.isMuted(this, n.app)
                 WatchState.putNotif(n)
-                showMirror(n, quiet = o.optBoolean("sync", false))
+                showMirror(n, quiet = sync || muted || !isNew)
                 WatchState.changed()
+                if (isNew && !sync && !muted && WPrefs.popups(this) && WatchState.callState == "idle") {
+                    startActivity(
+                        Intent(this, NotifPopupActivity::class.java)
+                            .putExtra("key", n.key)
+                            .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_SINGLE_TOP)
+                    )
+                }
             }
             "notif_rm" -> {
                 val key = o.optString("key")
@@ -265,7 +277,9 @@ class WatchService : Service() {
 
     private fun showMirror(n: Notif, quiet: Boolean) {
         val open = PendingIntent.getActivity(
-            this, 0, Intent(this, NotifActivity::class.java), PendingIntent.FLAG_IMMUTABLE
+            this, mirrorId(n.key),
+            Intent(this, NotifDetailActivity::class.java).putExtra("key", n.key),
+            PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT
         )
         val del = PendingIntent.getBroadcast(
             this, mirrorId(n.key),

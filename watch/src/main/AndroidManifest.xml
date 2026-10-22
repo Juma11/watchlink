@@ -39,6 +39,14 @@
             android:taskAffinity="com.vintechafrica.watchlink.call" />
 
         <activity android:name=".NotifActivity" android:exported="false" />
+        <activity android:name=".NotifDetailActivity" android:exported="false" />
+        <activity
+            android:name=".NotifPopupActivity"
+            android:exported="false"
+            android:excludeFromRecents="true"
+            android:launchMode="singleTop"
+            android:noHistory="true"
+            android:taskAffinity="com.vintechafrica.watchlink.popup" />
         <activity android:name=".ContactsActivity" android:exported="false"
             android:windowSoftInputMode="adjustResize" />
         <activity android:name=".BatteryActivity" android:exported="false" />

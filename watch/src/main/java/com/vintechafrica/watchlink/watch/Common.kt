@@ -40,6 +40,7 @@ data class Contact(val name: String, val phone: String)
 /** Everything the screens show. Updated by WatchService, read by activities. */
 object WatchState {
     @Volatile var connected = false
+    @Volatile var phoneName = ""
     @Volatile var callState = "idle"
     @Volatile var callName = ""
     @Volatile var callNum = ""

@@ -1,99 +1,58 @@
 package com.vintechafrica.watchlink.watch
 
 import android.app.Activity
-import android.app.AlertDialog
-import android.content.Context
 import android.content.Intent
-import android.graphics.Color
 import android.graphics.Typeface
-import android.graphics.drawable.GradientDrawable
 import android.os.Build
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
+import android.os.SystemClock
 import android.text.Editable
 import android.text.TextWatcher
 import android.view.Gravity
-import android.view.View
 import android.view.ViewGroup
 import android.view.WindowManager
-import android.widget.ArrayAdapter
-import android.widget.Button
 import android.widget.EditText
 import android.widget.LinearLayout
-import android.widget.ListView
-import android.widget.ScrollView
-import android.widget.TextView
-import android.widget.Toast
 import org.json.JSONObject
 
-// ---------- small UI helpers, sized for a 368x448 screen ----------
-
-fun Context.dp(v: Int): Int = (v * resources.displayMetrics.density).toInt()
-
-fun Context.bigButton(label: String, color: Int = Color.parseColor("#333333"), onClick: () -> Unit): Button =
-    Button(this).apply {
-        text = label
-        isAllCaps = false
-        textSize = 16f
-        setTextColor(Color.WHITE)
-        background = GradientDrawable().apply {
-            cornerRadius = dp(14).toFloat()
-            setColor(color)
-        }
-        layoutParams = LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(52)).apply {
-            topMargin = dp(6)
-        }
-        setOnClickListener { onClick() }
+private fun Activity.showOverLock() {
+    if (Build.VERSION.SDK_INT >= 27) {
+        setShowWhenLocked(true)
+        setTurnScreenOn(true)
+    } else {
+        @Suppress("DEPRECATION")
+        window.addFlags(
+            WindowManager.LayoutParams.FLAG_SHOW_WHEN_LOCKED or WindowManager.LayoutParams.FLAG_TURN_SCREEN_ON
+        )
     }
-
-fun Context.label(t: String, size: Float = 14f, bold: Boolean = false): TextView = TextView(this).apply {
-    text = t
-    textSize = size
-    setTextColor(Color.WHITE)
-    if (bold) setTypeface(typeface, Typeface.BOLD)
 }
 
-fun Activity.column(): LinearLayout = LinearLayout(this).apply {
-    orientation = LinearLayout.VERTICAL
-    setPadding(dp(14), dp(14), dp(14), dp(24))
-    setBackgroundColor(Color.BLACK)
+private fun dismissNotif(n: Notif) {
+    WatchService.instance?.send(JSONObject().put("t", "notif_dismiss").put("key", n.key))
+    WatchService.instance?.cancelMirror(n.key)
+    WatchState.removeNotif(n.key)
+    WatchState.changed()
 }
 
-fun Context.toast(s: String) = Toast.makeText(this, s, Toast.LENGTH_SHORT).show()
-
-val GREEN = Color.parseColor("#1E8E3E")
-val RED = Color.parseColor("#C5221F")
-
-// ---------- home ----------
+// ================= home =================
 
 class MainActivity : Activity() {
-    private lateinit var status: TextView
-    private lateinit var notifBtn: Button
+    private lateinit var body: LinearLayout
     private val handler = Handler(Looper.getMainLooper())
     private val listener: () -> Unit = { render() }
     private val tick = object : Runnable {
         override fun run() {
             render()
-            handler.postDelayed(this, 5_000)
+            handler.postDelayed(this, 10_000)
         }
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         WatchService.start(this)
-        val col = column()
-        col.addView(label("WatchLink", 20f, bold = true))
-        status = label("")
-        status.setPadding(0, dp(6), 0, dp(6))
-        col.addView(status)
-        notifBtn = bigButton("Notifications") { startActivity(Intent(this, NotifActivity::class.java)) }
-        col.addView(notifBtn)
-        col.addView(bigButton("Contacts") { startActivity(Intent(this, ContactsActivity::class.java)) })
-        col.addView(bigButton("Battery saver") { startActivity(Intent(this, BatteryActivity::class.java)) })
-        col.addView(bigButton("Log") { startActivity(Intent(this, LogActivity::class.java)) })
-        col.addView(bigButton("Bluetooth test") { startActivity(Intent(this, BleTestActivity::class.java)) })
-        setContentView(ScrollView(this).apply { setBackgroundColor(Color.BLACK); addView(col) })
+        body = screen {}
     }
 
     override fun onResume() {
@@ -109,181 +68,181 @@ class MainActivity : Activity() {
     }
 
     private fun render() {
+        body.removeAllViews()
         val b = Bat.read(this)
-        status.text = "${WatchService.status}\nBattery ${b.pct}%  ${"%.1f".format(b.tempC)}°C" +
-            (if (b.charging) "  charging" else "") +
-            (if (b.tempC >= 42f) "\nHOT: let it cool" else "")
-        notifBtn.text = "Notifications (${WatchState.notifCount()})"
+
+        // Status row
+        val (label, color) = when {
+            WatchState.connected -> "● Connected" to C.GREEN
+            WatchService.status == "Bluetooth off" -> "● Bluetooth off" to C.RED
+            else -> "● Waiting for phone" to C.ORANGE
+        }
+        body.addView(hbox().apply {
+            addView(pill(label, color))
+            addView(text("  ${b.pct}%", 14f, bold = true))
+            addView(text("  ${"%.0f".format(b.tempC)}°C", 14f, if (b.tempC >= 42f) C.ORANGE else C.SUB))
+            if (b.charging) addView(text("  ⚡", 14f, C.GREEN))
+        })
+        if (WatchState.connected && WatchState.phoneName.isNotEmpty()) {
+            body.addView(text(WatchState.phoneName, 12f, C.SUB).apply { setPadding(0, dp(4), 0, 0) })
+        }
+        if (b.tempC >= 45f) {
+            body.addView(card().apply {
+                background = rounded(C.RED)
+                addView(text("Watch is hot (${"%.0f".format(b.tempC)}°C)", 14f, bold = true))
+                addView(text("Unplug it and leave the screen off until it cools.", 12f))
+            })
+        }
+
+        val notifs = WatchState.notifList()
+        val latest = notifs.firstOrNull()
+        body.addView(tile(
+            "🔔", "Notifications${if (notifs.isNotEmpty()) " · ${notifs.size}" else ""}",
+            latest?.let { "${it.app}: ${it.title}" } ?: "Nothing new", C.BLUE
+        ) { startActivity(Intent(this, NotifActivity::class.java)) })
+
+        body.addView(tile(
+            "👤", "Contacts",
+            if (WatchState.contacts.isEmpty()) "Not synced yet" else "${WatchState.contacts.size} from phone",
+            C.GREEN
+        ) { startActivity(Intent(this, ContactsActivity::class.java)) })
+
+        body.addView(tile("🔋", "Battery saver", "Wi-Fi, screen, airplane", C.ORANGE) {
+            startActivity(Intent(this, BatteryActivity::class.java))
+        })
+
+        val pop = WPrefs.popups(this)
+        body.addView(tile("💬", "Popups: ${if (pop) "On" else "Off"}",
+            if (pop) "New messages light the screen" else "Silent, check the list", C.PURPLE) {
+            WPrefs.setPopups(this, !pop)
+            render()
+        })
+
+        body.addView(tile("🧾", "Log", "For troubleshooting", C.CARD2) {
+            startActivity(Intent(this, LogActivity::class.java))
+        })
+        body.addView(tile("📶", "Bluetooth test", null, C.CARD2) {
+            startActivity(Intent(this, BleTestActivity::class.java))
+        })
     }
 }
 
-// ---------- incoming / ongoing call ----------
+// ================= call =================
 
 class CallActivity : Activity() {
-    private lateinit var who: TextView
-    private lateinit var state: TextView
-    private lateinit var answer: Button
-    private lateinit var reject: Button
-    private lateinit var silence: Button
+    private lateinit var body: LinearLayout
+    private val handler = Handler(Looper.getMainLooper())
     private val listener: () -> Unit = { render() }
+    private var answeredAt = 0L
+    private var shownState = ""
+    private val tick = object : Runnable {
+        override fun run() {
+            if (WatchState.callState == "offhook") render()
+            handler.postDelayed(this, 1000)
+        }
+    }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        if (Build.VERSION.SDK_INT >= 27) {
-            setShowWhenLocked(true)
-            setTurnScreenOn(true)
-        } else {
-            @Suppress("DEPRECATION")
-            window.addFlags(
-                WindowManager.LayoutParams.FLAG_SHOW_WHEN_LOCKED or WindowManager.LayoutParams.FLAG_TURN_SCREEN_ON
-            )
-        }
+        showOverLock()
         window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
-
-        val col = column().apply { gravity = Gravity.CENTER_HORIZONTAL }
-        state = label("Incoming call", 14f)
-        who = label("", 24f, bold = true).apply {
-            gravity = Gravity.CENTER
-            setPadding(0, dp(10), 0, dp(14))
+        wakeScreen(30_000)
+        body = vbox().apply {
+            gravity = Gravity.CENTER_HORIZONTAL
+            setBackgroundColor(C.BG)
+            setPadding(dp(16), dp(24), dp(16), dp(16))
         }
-        answer = bigButton("Answer", GREEN) { WatchService.instance?.sendCmd("answer") }
-        reject = bigButton("Reject", RED) {
-            WatchService.instance?.sendCmd(if (WatchState.callState == "offhook") "hangup" else "reject")
-        }
-        silence = bigButton("Silence") {
-            WatchService.instance?.stopRinging()
-            WatchService.instance?.sendCmd("silence")
-        }
-        col.addView(state)
-        col.addView(who)
-        col.addView(answer)
-        col.addView(reject)
-        col.addView(silence)
-        setContentView(col)
+        setContentView(body)
         WatchState.addListener(listener)
+        handler.post(tick)
+        render()
+    }
+
+    override fun onNewIntent(intent: Intent?) {
+        super.onNewIntent(intent)
+        wakeScreen(30_000)
         render()
     }
 
     override fun onDestroy() {
         WatchState.removeListener(listener)
+        handler.removeCallbacks(tick)
         super.onDestroy()
     }
 
     private fun render() {
-        who.text = WatchState.callerLabel()
-        when (WatchState.callState) {
-            "ringing" -> {
-                state.text = "Incoming call"
-                answer.visibility = View.VISIBLE
-                silence.visibility = View.VISIBLE
-                reject.text = "Reject"
-            }
-            "offhook" -> {
-                state.text = "On call · talk on your phone or earbuds"
-                answer.visibility = View.GONE
-                silence.visibility = View.GONE
-                reject.text = "Hang up"
-            }
-            else -> finish()
+        val st = WatchState.callState
+        if (st != "ringing" && st != "offhook") {
+            finish()
+            return
         }
-    }
-}
+        if (st == "offhook" && answeredAt == 0L) answeredAt = SystemClock.elapsedRealtime()
+        val sig = st + "|" + WatchState.callerLabel() + "|" + WatchState.callNum
+        if (sig == shownState && st == "ringing") return
+        shownState = sig
+        body.removeAllViews()
 
-// ---------- notifications ----------
-
-class NotifActivity : Activity() {
-    private lateinit var list: ListView
-    private lateinit var empty: TextView
-    private var items: List<Notif> = emptyList()
-    private val listener: () -> Unit = { render() }
-
-    override fun onCreate(savedInstanceState: Bundle?) {
-        super.onCreate(savedInstanceState)
-        val col = column()
-        col.addView(label("Notifications", 18f, bold = true))
-        empty = label("No notifications").apply { setPadding(0, dp(10), 0, 0) }
-        col.addView(empty)
-        list = ListView(this).apply {
-            layoutParams = LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f)
-            setOnItemClickListener { _, _, pos, _ -> open(items[pos]) }
+        val who = WatchState.callerLabel()
+        body.addView(text(if (st == "ringing") "Incoming call" else elapsed(), 14f,
+            if (st == "ringing") C.GREEN else C.SUB))
+        body.addView(avatar(initial(who), C.avatarColor(who), 76, 32f).apply {
+            (layoutParams as LinearLayout.LayoutParams).topMargin = dp(14)
+        })
+        body.addView(text(who, 22f, bold = true, lines = 2).apply {
+            gravity = Gravity.CENTER
+            setPadding(0, dp(10), 0, 0)
+        })
+        if (WatchState.callName.isNotEmpty() && WatchState.callNum.isNotEmpty()) {
+            body.addView(text(WatchState.callNum, 14f, C.SUB))
         }
-        col.addView(list)
-        setContentView(col)
-    }
+        if (st == "offhook") {
+            body.addView(text("Talk on your phone or earbuds", 12f, C.SUB).apply { setPadding(0, dp(6), 0, 0) })
+        }
 
-    override fun onResume() {
-        super.onResume()
-        WatchState.addListener(listener)
-        render()
-    }
+        // Push buttons to the bottom
+        body.addView(LinearLayout(this).apply {
+            layoutParams = LinearLayout.LayoutParams(1, 0, 1f)
+        })
 
-    override fun onPause() {
-        WatchState.removeListener(listener)
-        super.onPause()
-    }
-
-    private fun render() {
-        items = WatchState.notifList()
-        empty.visibility = if (items.isEmpty()) View.VISIBLE else View.GONE
-        val rows = items.map { "${it.app} · ${it.title}\n${it.text.take(70)}" }
-        list.adapter = object : ArrayAdapter<String>(this, android.R.layout.simple_list_item_1, rows) {
-            override fun getView(position: Int, convertView: View?, parent: ViewGroup): View =
-                (super.getView(position, convertView, parent) as TextView).apply {
-                    setTextColor(Color.WHITE)
-                    textSize = 13f
+        val row = hbox().apply {
+            layoutParams = LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT)
+        }
+        if (st == "ringing") {
+            row.addView(roundAction("✕", "Reject", C.RED) { WatchService.instance?.sendCmd("reject") })
+            row.addView(roundAction("✆", "Answer", C.GREEN) { WatchService.instance?.sendCmd("answer") })
+        } else {
+            row.addView(roundAction("✕", "Hang up", C.RED) { WatchService.instance?.sendCmd("hangup") })
+        }
+        body.addView(row)
+        if (st == "ringing") {
+            body.addView(text("Silence", 15f, C.SUB, bold = true).apply {
+                gravity = Gravity.CENTER
+                setPadding(0, dp(14), 0, dp(4))
+                isClickable = true
+                setOnClickListener {
+                    WatchService.instance?.stopRinging()
+                    WatchService.instance?.sendCmd("silence")
+                    toast("Silenced")
                 }
-        }
-    }
-
-    private fun open(n: Notif) {
-        AlertDialog.Builder(this)
-            .setTitle("${n.app}: ${n.title}")
-            .setMessage(n.text)
-            .setPositiveButton("Dismiss") { _, _ ->
-                WatchService.instance?.send(JSONObject().put("t", "notif_dismiss").put("key", n.key))
-                WatchService.instance?.cancelMirror(n.key)
-                WatchState.removeNotif(n.key)
-                render()
-            }
-            .setNegativeButton("Close", null)
-            .show()
-    }
-}
-
-// ---------- contacts ----------
-
-class ContactsActivity : Activity() {
-    private lateinit var list: ListView
-    private lateinit var search: EditText
-    private var shown: List<Contact> = emptyList()
-    private val listener: () -> Unit = { render() }
-
-    override fun onCreate(savedInstanceState: Bundle?) {
-        super.onCreate(savedInstanceState)
-        val col = column()
-        col.addView(label("Contacts", 18f, bold = true))
-        search = EditText(this).apply {
-            hint = "Search"
-            setTextColor(Color.WHITE)
-            setHintTextColor(Color.GRAY)
-            setSingleLine()
-            addTextChangedListener(object : TextWatcher {
-                override fun beforeTextChanged(s: CharSequence?, a: Int, b: Int, c: Int) {}
-                override fun onTextChanged(s: CharSequence?, a: Int, b: Int, c: Int) {}
-                override fun afterTextChanged(s: Editable?) = render()
             })
         }
-        col.addView(search)
-        col.addView(bigButton("Refresh from phone") {
-            WatchService.instance?.send(JSONObject().put("t", "get_contacts"))
-            toast("Asking phone…")
-        })
-        list = ListView(this).apply {
-            layoutParams = LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f)
-            setOnItemClickListener { _, _, pos, _ -> confirmCall(shown[pos]) }
-        }
-        col.addView(list)
-        setContentView(col)
+    }
+
+    private fun elapsed(): String {
+        val s = (SystemClock.elapsedRealtime() - answeredAt) / 1000
+        return "On call · %d:%02d".format(s / 60, s % 60)
+    }
+}
+
+// ================= notification list =================
+
+class NotifActivity : Activity() {
+    private lateinit var body: LinearLayout
+    private val listener: () -> Unit = { render() }
+
+    override fun onCreate(savedInstanceState: Bundle?) {
+        super.onCreate(savedInstanceState)
+        body = screen {}
     }
 
     override fun onResume() {
@@ -298,47 +257,253 @@ class ContactsActivity : Activity() {
     }
 
     private fun render() {
-        val q = search.text.toString().trim().lowercase()
-        shown = WatchState.contacts.filter {
-            q.isEmpty() || it.name.lowercase().contains(q) || it.phone.contains(q)
+        body.removeAllViews()
+        val items = WatchState.notifList()
+        val clear = if (items.isEmpty()) null else pill("Clear all", C.CARD2).apply {
+            isClickable = true
+            setOnClickListener {
+                WatchState.notifList().forEach { dismissNotif(it) }
+                toast("Cleared")
+            }
         }
-        val rows = shown.map { "${it.name}\n${it.phone}" }
-        list.adapter = object : ArrayAdapter<String>(this, android.R.layout.simple_list_item_1, rows) {
-            override fun getView(position: Int, convertView: View?, parent: ViewGroup): View =
-                (super.getView(position, convertView, parent) as TextView).apply {
-                    setTextColor(Color.WHITE)
-                    textSize = 14f
-                }
+        body.addView(header("Notifications", clear))
+        if (!WatchState.connected) {
+            body.addView(text("Phone offline. List may be out of date.", 12f, C.ORANGE))
         }
+        if (items.isEmpty()) {
+            body.addView(text("All caught up", 15f, C.SUB).apply { setPadding(0, dp(30), 0, 0); gravity = Gravity.CENTER })
+            return
+        }
+        items.take(60).forEach { n -> body.addView(notifCard(n)) }
     }
 
-    private fun confirmCall(c: Contact) {
-        AlertDialog.Builder(this)
-            .setTitle("Call ${c.name}?")
-            .setMessage("Your phone places the call. Talk on the phone or earbuds.")
-            .setPositiveButton("Call") { _, _ ->
-                WatchService.instance?.sendCmd("dial", c.phone)
-                toast("Calling on phone…")
-            }
-            .setNegativeButton("Cancel", null)
-            .show()
+    private fun notifCard(n: Notif): LinearLayout = card {
+        startActivity(Intent(this, NotifDetailActivity::class.java).putExtra("key", n.key))
+    }.apply {
+        addView(hbox().apply {
+            addView(text(n.app, 12f, C.avatarColor(n.app), bold = true, lines = 1).apply {
+                layoutParams = LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f)
+            })
+            addView(text(timeAgo(n.time), 12f, C.SUB))
+        })
+        if (n.title.isNotEmpty()) addView(text(n.title, 15f, bold = true, lines = 1))
+        if (n.text.isNotEmpty()) addView(text(n.text, 13f, C.SUB, lines = 2))
     }
 }
 
-// ---------- log ----------
+// ================= one notification =================
+
+class NotifDetailActivity : Activity() {
+    override fun onCreate(savedInstanceState: Bundle?) {
+        super.onCreate(savedInstanceState)
+        val key = intent.getStringExtra("key").orEmpty()
+        val n = WatchState.notifList().firstOrNull { it.key == key }
+        if (n == null) {
+            finish()
+            return
+        }
+        screen {
+            addView(hbox().apply {
+                addView(avatar(initial(n.app), C.avatarColor(n.app), 32, 14f))
+                addView(text("  ${n.app} · ${timeAgo(n.time)}", 13f, C.SUB, lines = 1))
+            })
+            if (n.title.isNotEmpty()) addView(text(n.title, 18f, bold = true).apply { setPadding(0, dp(10), 0, 0) })
+            addView(text(n.text, 15f).apply { setPadding(0, dp(6), 0, dp(6)) })
+            addView(action("Dismiss", C.RED) {
+                dismissNotif(n)
+                finish()
+            })
+            val muted = WPrefs.isMuted(this@NotifDetailActivity, n.app)
+            addView(action(if (muted) "Unmute ${n.app}" else "Mute ${n.app} popups", C.CARD2) {
+                val now = WPrefs.toggleMute(this@NotifDetailActivity, n.app)
+                toast(if (now) "${n.app} muted" else "${n.app} unmuted")
+                finish()
+            })
+            addView(action("Back", C.CARD2) { finish() })
+        }
+    }
+}
+
+// ================= popup for new notifications =================
+
+class NotifPopupActivity : Activity() {
+    private val handler = Handler(Looper.getMainLooper())
+    private val autoClose = Runnable { finish() }
+    private var extra = 0
+
+    override fun onCreate(savedInstanceState: Bundle?) {
+        super.onCreate(savedInstanceState)
+        showOverLock()
+        show(intent)
+    }
+
+    override fun onNewIntent(intent: Intent?) {
+        super.onNewIntent(intent)
+        extra++
+        if (intent != null) show(intent)
+    }
+
+    override fun onDestroy() {
+        handler.removeCallbacks(autoClose)
+        super.onDestroy()
+    }
+
+    private fun show(i: Intent) {
+        val key = i.getStringExtra("key").orEmpty()
+        val n = WatchState.notifList().firstOrNull { it.key == key }
+        if (n == null) {
+            finish()
+            return
+        }
+        wakeScreen(9_000)
+        handler.removeCallbacks(autoClose)
+        handler.postDelayed(autoClose, 8_000)
+
+        val col = vbox().apply {
+            gravity = Gravity.CENTER_VERTICAL
+            setBackgroundColor(C.BG)
+            setPadding(dp(14), dp(14), dp(14), dp(14))
+        }
+        val c = card {
+            handler.removeCallbacks(autoClose)
+            startActivity(Intent(this, NotifDetailActivity::class.java).putExtra("key", n.key))
+            finish()
+        }.apply {
+            addView(hbox().apply {
+                addView(avatar(initial(n.app), C.avatarColor(n.app), 36, 16f))
+                addView(text("  ${n.app}", 14f, C.SUB, bold = true, lines = 1))
+            })
+            if (n.title.isNotEmpty()) addView(text(n.title, 18f, bold = true, lines = 2).apply { setPadding(0, dp(8), 0, 0) })
+            addView(text(n.text, 15f, lines = 6).apply { setPadding(0, dp(4), 0, 0) })
+            if (extra > 0) addView(text("+$extra more", 12f, C.BLUE).apply { setPadding(0, dp(6), 0, 0) })
+        }
+        col.addView(c)
+        col.addView(hbox().apply {
+            layoutParams = matchWrap(6, this@NotifPopupActivity)
+            addView(action("Dismiss", C.RED) {
+                dismissNotif(n)
+                finish()
+            }.apply { (layoutParams as LinearLayout.LayoutParams).apply { width = 0; weight = 1f; rightMargin = dp(4) } })
+            addView(action("Close", C.CARD2) { finish() }.apply {
+                (layoutParams as LinearLayout.LayoutParams).apply { width = 0; weight = 1f; leftMargin = dp(4) }
+            })
+        })
+        setContentView(col)
+    }
+}
+
+// ================= contacts =================
+
+class ContactsActivity : Activity() {
+    private lateinit var list: LinearLayout
+    private lateinit var search: EditText
+    private var selected: Contact? = null
+    private val listener: () -> Unit = { render() }
+
+    override fun onCreate(savedInstanceState: Bundle?) {
+        super.onCreate(savedInstanceState)
+        val sync = pill("Sync", C.CARD2).apply {
+            isClickable = true
+            setOnClickListener {
+                WatchService.instance?.send(JSONObject().put("t", "get_contacts"))
+                toast("Asking phone…")
+            }
+        }
+        screen {
+            addView(header("Contacts", sync))
+            search = EditText(this@ContactsActivity).apply {
+                hint = "Search"
+                textSize = 15f
+                setTextColor(C.TEXT)
+                setHintTextColor(C.SUB)
+                setSingleLine()
+                background = rounded(C.CARD, 20)
+                setPadding(dp(14), dp(10), dp(14), dp(10))
+                layoutParams = matchWrap(6, this@ContactsActivity)
+                addTextChangedListener(object : TextWatcher {
+                    override fun beforeTextChanged(s: CharSequence?, a: Int, b: Int, c: Int) {}
+                    override fun onTextChanged(s: CharSequence?, a: Int, b: Int, c: Int) {}
+                    override fun afterTextChanged(s: Editable?) = render()
+                })
+            }
+            addView(search)
+            list = vbox()
+            addView(list)
+        }
+    }
+
+    override fun onResume() {
+        super.onResume()
+        WatchState.addListener(listener)
+        render()
+    }
+
+    override fun onPause() {
+        WatchState.removeListener(listener)
+        super.onPause()
+    }
+
+    private fun render() {
+        list.removeAllViews()
+        if (WatchState.contacts.isEmpty()) {
+            list.addView(text(
+                if (WatchState.connected) "Tap Sync to load contacts" else "Connect the phone first",
+                14f, C.SUB
+            ).apply { setPadding(0, dp(20), 0, 0) })
+            return
+        }
+        val q = search.text.toString().trim().lowercase()
+        val shown = WatchState.contacts.filter {
+            q.isEmpty() || it.name.lowercase().contains(q) || it.phone.contains(q)
+        }.take(150)
+        shown.forEach { c -> list.addView(contactRow(c)) }
+        if (shown.size == 150) list.addView(text("Search to see more", 12f, C.SUB).apply { setPadding(0, dp(8), 0, 0) })
+    }
+
+    private fun contactRow(c: Contact): LinearLayout {
+        val open = selected == c
+        val box = card {
+            selected = if (open) null else c
+            render()
+        }
+        box.addView(hbox().apply {
+            addView(avatar(initial(c.name), C.avatarColor(c.name), 34, 15f))
+            addView(vbox().apply {
+                setPadding(dp(10), 0, 0, 0)
+                addView(text(c.name, 15f, bold = true, lines = 1))
+                addView(text(c.phone, 12f, C.SUB, lines = 1))
+            })
+        })
+        if (open) {
+            box.addView(action("Call on phone", C.GREEN) {
+                WatchService.instance?.sendCmd("dial", c.phone)
+                toast("Calling ${c.name}…")
+                selected = null
+                render()
+            })
+        }
+        return box
+    }
+}
+
+// ================= log =================
 
 class LogActivity : Activity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        val col = column()
-        col.addView(bigButton("Share log") {
-            val i = Intent(Intent.ACTION_SEND).apply {
-                type = "text/plain"
-                putExtra(Intent.EXTRA_TEXT, L.dump())
-            }
-            startActivity(Intent.createChooser(i, "Share log"))
-        })
-        col.addView(label(L.dump().ifEmpty { "Log is empty" }, 11f).apply { typeface = Typeface.MONOSPACE })
-        setContentView(ScrollView(this).apply { setBackgroundColor(Color.BLACK); addView(col) })
+        screen {
+            addView(header("Log"))
+            addView(action("Share log", C.BLUE) {
+                val i = Intent(Intent.ACTION_SEND).apply {
+                    type = "text/plain"
+                    putExtra(Intent.EXTRA_TEXT, L.dump())
+                }
+                startActivity(Intent.createChooser(i, "Share log"))
+            })
+            addView(text(L.dump().ifEmpty { "Log is empty" }, 10f, C.SUB).apply {
+                typeface = Typeface.MONOSPACE
+                setPadding(0, dp(10), 0, 0)
+            })
+        }
     }
 }
