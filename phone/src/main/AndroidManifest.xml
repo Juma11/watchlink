@@ -49,6 +49,8 @@
             </intent-filter>
         </service>
 
+        <receiver android:name=".FindStopReceiver" android:exported="false" />
+
         <receiver
             android:name=".BootReceiver"
             android:exported="true">

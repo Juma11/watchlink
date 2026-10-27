@@ -214,7 +214,8 @@ class WatchService : Service() {
             "notif" -> {
                 val n = Notif(
                     o.optString("key"), o.optString("app"), o.optString("title"),
-                    o.optString("text"), o.optLong("time", System.currentTimeMillis())
+                    o.optString("text"), o.optLong("time", System.currentTimeMillis()),
+                    o.optBoolean("reply", false)
                 )
                 val old = WatchState.notifList().firstOrNull { it.key == n.key }
                 val isNew = old == null || old.text != n.text || old.title != n.title
@@ -244,6 +245,22 @@ class WatchService : Service() {
                 }
                 WatchState.contacts = list
                 L.i("Got ${list.size} contacts")
+                WatchState.changed()
+            }
+            "media" -> {
+                WatchState.media = Media(
+                    o.optBoolean("has"), o.optString("title"), o.optString("artist"), o.optString("app"),
+                    o.optBoolean("playing"), o.optInt("vol"), o.optInt("volMax", 15)
+                )
+                WatchState.changed()
+            }
+            "reply_result" -> {
+                WatchState.lastReply = if (o.optBoolean("ok")) "Sent" else "Not sent: ${o.optString("why")}"
+                L.i("Reply: ${WatchState.lastReply}")
+                WatchState.changed()
+            }
+            "find_state" -> {
+                WatchState.findingPhone = o.optBoolean("on")
                 WatchState.changed()
             }
             else -> L.i("Unknown message: ${o.optString("t")}")

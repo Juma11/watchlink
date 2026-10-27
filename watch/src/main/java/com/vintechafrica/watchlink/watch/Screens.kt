@@ -104,9 +104,26 @@ class MainActivity : Activity() {
             notifs.firstOrNull()?.let { "${notifs.size} · ${it.app}" } ?: "All caught up", C.BLUE
         ) { startActivity(Intent(this, NotifActivity::class.java)) })
 
+        val m = WatchState.media
+        body.addView(tile(if (m.playing) "▶" else "♪", "Music",
+            if (m.has && m.title.isNotEmpty()) "${m.title}${if (m.artist.isNotEmpty()) " · ${m.artist}" else ""}"
+            else "Nothing playing", C.PURPLE
+        ) { startActivity(Intent(this, MusicActivity::class.java)) })
+
         body.addView(tile("👤", "Contacts",
             if (WatchState.contacts.isEmpty()) "Tap to sync" else "${WatchState.contacts.size} contacts", C.GREEN
         ) { startActivity(Intent(this, ContactsActivity::class.java)) })
+
+        val finding = WatchState.findingPhone
+        body.addView(tile("📳", if (finding) "Stop ringing phone" else "Find phone",
+            if (finding) "Phone is ringing" else "Ring the phone, even on silent",
+            if (finding) C.RED else C.CARD2) {
+            if (!WatchState.connected) {
+                toast("Phone not connected")
+                return@tile
+            }
+            WatchService.instance?.send(JSONObject().put("t", if (finding) "find_stop" else "find"))
+        })
 
         body.addView(tile("🔋", "Battery", "${b.pct}% · ${"%.0f".format(b.tempC)}°C", C.ORANGE) {
             startActivity(Intent(this, BatteryActivity::class.java))
@@ -381,6 +398,12 @@ class NotifDetailActivity : Activity() {
             })
             if (n.title.isNotEmpty()) addView(text(n.title, 18f, bold = true).apply { setPadding(0, dp(10), 0, 0) })
             addView(text(n.text, 15f).apply { setPadding(0, dp(6), 0, dp(6)) })
+            if (n.canReply) {
+                addView(action("Reply", C.BLUE) {
+                    startActivity(Intent(this@NotifDetailActivity, ReplyActivity::class.java).putExtra("key", n.key))
+                    finish()
+                })
+            }
             addView(action("Dismiss", C.RED) {
                 dismissNotif(n)
                 finish()

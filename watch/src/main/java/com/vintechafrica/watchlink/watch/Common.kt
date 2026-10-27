@@ -34,7 +34,15 @@ object L {
     fun dump(): String = lines.joinToString("\n")
 }
 
-data class Notif(val key: String, val app: String, val title: String, val text: String, val time: Long)
+data class Notif(
+    val key: String, val app: String, val title: String, val text: String, val time: Long,
+    val canReply: Boolean = false
+)
+
+data class Media(
+    val has: Boolean = false, val title: String = "", val artist: String = "", val app: String = "",
+    val playing: Boolean = false, val vol: Int = 0, val volMax: Int = 15
+)
 data class Contact(val name: String, val phone: String)
 
 /** Everything the screens show. Updated by WatchService, read by activities. */
@@ -47,6 +55,9 @@ object WatchState {
     @Volatile var callDir = ""
     @Volatile var callApp = ""   // "WhatsApp" etc. for internet calls, empty for the phone line
     @Volatile var contacts: List<Contact> = emptyList()
+    @Volatile var media = Media()
+    @Volatile var findingPhone = false
+    @Volatile var lastReply: String? = null   // result text of the last reply, shown once
     private val notifs = LinkedHashMap<String, Notif>()
     private val listeners = CopyOnWriteArrayList<() -> Unit>()
     private val main = Handler(Looper.getMainLooper())

@@ -98,11 +98,13 @@ class NotifListener : NotificationListenerService() {
 
     override fun onListenerConnected() {
         instance = this
+        Media.start(this)
         L.i("Notification access active")
     }
 
     override fun onListenerDisconnected() {
         instance = null
+        Media.stop()
         L.i("Notification access lost")
     }
 
@@ -151,6 +153,7 @@ class NotifListener : NotificationListenerService() {
         if (sbn.packageName == packageName || sbn.packageName in skip) return null
         val n = sbn.notification
         if (n.category == Notification.CATEGORY_CALL) return null
+        if (n.extras.containsKey(Notification.EXTRA_MEDIA_SESSION)) return null
         if ((n.flags and Notification.FLAG_ONGOING_EVENT) != 0) return null
         if ((n.flags and Notification.FLAG_GROUP_SUMMARY) != 0) return null
         val ex = n.extras
@@ -165,6 +168,7 @@ class NotifListener : NotificationListenerService() {
             .put("title", title.take(80))
             .put("text", text.take(400))
             .put("time", sbn.postTime)
+            .put("reply", Reply.findReply(n) != null)
     }
 
     fun appLabel(pkg: String): String = try {

@@ -53,6 +53,9 @@
             android:windowSoftInputMode="adjustResize" />
         <activity android:name=".BatteryActivity" android:exported="false" />
         <activity android:name=".SettingsActivity" android:exported="false" />
+        <activity android:name=".MusicActivity" android:exported="false" />
+        <activity android:name=".ReplyActivity" android:exported="false"
+            android:windowSoftInputMode="adjustResize" />
         <activity android:name=".BleTestActivity" android:exported="false" />
         <activity android:name=".LogActivity" android:exported="false" />
 

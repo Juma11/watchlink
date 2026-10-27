@@ -5,6 +5,9 @@ Bluetooth bridge between a Samsung phone and the HainoTeko FG-3 Android watch.
 - Caller name and number on the watch, with Answer, Reject, Silence, Hang up
 - Every phone notification mirrored to the watch, dismiss from either side
 - Contacts synced from the phone, tap to call (the phone places the call)
+- Music remote: title, artist, play/pause, next, previous, volume for any phone player
+- Quick replies and typed replies to WhatsApp, SMS and other apps with a Reply button
+- Find my phone: rings the phone at full alarm volume, even on silent, for 30 s
 - Battery tools on the watch: Wi-Fi toggle, dim screen, battery saver, airplane shortcut
 - On-watch log viewer, since the FG-3 has no USB data
 
@@ -36,6 +39,12 @@ Messages are one JSON object per line.
 | watch | `cmd` | `a` (answer, reject, hangup, silence, dial), `num` |
 | watch | `notif_dismiss` | `key` |
 | watch | `get_contacts` | |
+| phone | `media` | `has`, `title`, `artist`, `app`, `playing`, `vol`, `volMax` |
+| watch | `media_cmd` | `a` (toggle, next, prev, vol_up, vol_down) |
+| watch | `reply` | `key`, `text` |
+| phone | `reply_result` | `ok`, `why` |
+| watch | `find` / `find_stop` | |
+| phone | `find_state` | `on` |
 
 ## Build
 

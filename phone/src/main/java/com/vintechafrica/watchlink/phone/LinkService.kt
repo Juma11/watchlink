@@ -171,6 +171,7 @@ class LinkService : Service() {
         send(JSONObject().put("t", "hello").put("v", 1))
         lastCall?.let { send(it) }
         NotifListener.snapshot().forEach { send(it.put("sync", true)) }
+        Media.resend()
 
         try {
             val reader = BufferedReader(InputStreamReader(s.inputStream, Charsets.UTF_8))
@@ -206,6 +207,11 @@ class LinkService : Service() {
             "cmd" -> CallControl.run(this, o.optString("a"), o.optString("num"))
             "notif_dismiss" -> NotifListener.dismiss(o.optString("key"))
             "get_contacts" -> Thread({ sendContacts() }, "wl-contacts").start()
+            "media_cmd" -> Media.command(o.optString("a"))
+            "media_get" -> Media.resend()
+            "reply" -> Reply.send(this, o.optString("key"), o.optString("text"))
+            "find" -> FindPhone.start(this)
+            "find_stop" -> FindPhone.stop(this)
             else -> L.i("Unknown message: ${o.optString("t")}")
         }
     }
