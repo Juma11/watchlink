@@ -210,6 +210,7 @@ class LinkService : Service() {
             "get_contacts" -> Thread({ sendContacts() }, "wl-contacts").start()
             "media_cmd" -> Media.command(o.optString("a"))
             "media_get" -> Media.resend()
+            "media_search" -> Media.search(o.optString("q"))
             "reply" -> Reply.send(this, o.optString("key"), o.optString("text"))
             "find" -> FindPhone.start(this)
             "find_stop" -> FindPhone.stop(this)

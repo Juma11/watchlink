@@ -199,6 +199,12 @@ object WPrefs {
     fun setPopups(c: Context, on: Boolean) = p(c).edit().putBoolean("popups", on).apply()
     fun muted(c: Context): Set<String> = p(c).getStringSet("muted", emptySet())?.toSet() ?: emptySet()
     fun isMuted(c: Context, app: String) = app in muted(c)
+    fun searches(c: Context): List<String> =
+        p(c).getString("searches", "")!!.split("|").filter { it.isNotBlank() }
+    fun addSearch(c: Context, q: String) {
+        val l = (listOf(q) + searches(c).filter { !it.equals(q, true) }).take(8)
+        p(c).edit().putString("searches", l.joinToString("|")).apply()
+    }
     fun ussdSim(c: Context) = p(c).getInt("ussdSim", 1)
     fun setUssdSim(c: Context, v: Int) = p(c).edit().putInt("ussdSim", v).apply()
     /** Last codes used, newest first. */

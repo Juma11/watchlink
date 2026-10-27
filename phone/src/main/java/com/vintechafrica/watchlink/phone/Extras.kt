@@ -147,6 +147,45 @@ object Media {
         }
     }
 
+    /**
+     * Plays a song, artist or playlist by name in the current (or last used) music app.
+     * Spotify, YouTube Music and most players support this through their media session.
+     */
+    fun search(query: String) {
+        main.post {
+            val c = ctx ?: return@post
+            val q = query.trim()
+            fun result(ok: Boolean, text: String) {
+                LinkService.instance?.send(JSONObject().put("t", "search_result").put("ok", ok).put("text", text))
+                L.i("Music search: $text")
+            }
+            if (q.isEmpty()) return@post
+            val ctl = controller
+            val app = ctl?.packageName?.let { appLabel(it) } ?: ""
+            val canSearch = ctl != null &&
+                ((ctl.playbackState?.actions ?: 0L) and PlaybackState.ACTION_PLAY_FROM_SEARCH) != 0L
+            if (ctl != null && canSearch) {
+                ctl.transportControls.playFromSearch(q, Bundle())
+                result(true, "Playing \"$q\" on $app")
+                main.postDelayed({ push() }, 1500)
+                return@post
+            }
+            // No session that supports search: ask the system to find a player.
+            try {
+                val i = Intent(android.provider.MediaStore.INTENT_ACTION_MEDIA_PLAY_FROM_SEARCH)
+                    .putExtra(android.app.SearchManager.QUERY, q)
+                    .putExtra(android.provider.MediaStore.EXTRA_MEDIA_FOCUS, "vnd.android.cursor.item/*")
+                    .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                ctl?.packageName?.let { i.setPackage(it) }
+                c.startActivity(i)
+                result(true, if (ctl != null) "$app has no search, sent to the phone" else "Sent to the phone's music app")
+            } catch (e: Exception) {
+                result(false, if (ctl != null) "$app does not support search. Try Spotify or YouTube Music."
+                    else "Open a music app on the phone once, then search again.")
+            }
+        }
+    }
+
     /** Fallback when no app has a media session: the last player still gets the key. */
     private fun key(am: AudioManager, code: Int) {
         am.dispatchMediaKeyEvent(KeyEvent(KeyEvent.ACTION_DOWN, code))

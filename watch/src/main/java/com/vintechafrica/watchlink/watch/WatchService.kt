@@ -259,6 +259,10 @@ class WatchService : Service() {
                 L.i("Reply: ${WatchState.lastReply}")
                 WatchState.changed()
             }
+            "search_result" -> {
+                WatchState.searchResult = o.optString("text")
+                WatchState.changed()
+            }
             "sims" -> {
                 val arr = o.optJSONArray("list")
                 val list = ArrayList<Sim>()

@@ -63,6 +63,7 @@ object WatchState {
     @Volatile var sims: List<Sim> = emptyList()
     @Volatile var ussd: UssdResult? = null
     @Volatile var ussdBusy = false
+    @Volatile var searchResult: String? = null
     private val notifs = LinkedHashMap<String, Notif>()
     private val listeners = CopyOnWriteArrayList<() -> Unit>()
     private val main = Handler(Looper.getMainLooper())

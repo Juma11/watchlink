@@ -81,6 +81,10 @@ class MusicActivity : Activity() {
             addView(smallRound("⏭") { music("next") })
         })
 
+        body.addView(action("🔍  Search music", C.CARD2) {
+            startActivity(android.content.Intent(this, MusicSearchActivity::class.java))
+        })
+
         body.addView(hbox().apply {
             layoutParams = LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT)
                 .apply { topMargin = dp(10) }
@@ -188,5 +192,74 @@ class ReplyActivity : Activity() {
         WatchState.lastReply = null
         toast(r)
         if (r == "Sent") finish()
+    }
+}
+
+/** Type a song, artist or playlist; the phone's music app plays it. */
+class MusicSearchActivity : Activity() {
+    private lateinit var input: EditText
+    private val listener: () -> Unit = { showResult() }
+
+    override fun onCreate(savedInstanceState: Bundle?) {
+        super.onCreate(savedInstanceState)
+        WatchState.searchResult = null
+        screen {
+            addView(header("Search music"))
+            val app = WatchState.media.app
+            addView(text(if (app.isNotEmpty()) "Plays on $app" else "Plays on the phone's music app", 12f, C.SUB))
+            input = EditText(this@MusicSearchActivity).apply {
+                hint = "Song, artist or playlist"
+                textSize = 15f
+                setTextColor(C.TEXT)
+                setHintTextColor(C.SUB)
+                background = rounded(C.CARD, 20)
+                setPadding(dp(14), dp(10), dp(14), dp(10))
+                imeOptions = EditorInfo.IME_ACTION_SEARCH
+                setSingleLine()
+                setOnEditorActionListener { v, _, _ ->
+                    go(v.text.toString())
+                    true
+                }
+            }
+            addView(input, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT)
+                .apply { topMargin = dp(6) })
+            addView(action("Play", C.PURPLE) { go(input.text.toString()) })
+            val recent = WPrefs.searches(this@MusicSearchActivity)
+            if (recent.isNotEmpty()) {
+                addView(text("Recent", 12f, C.SUB, bold = true).apply { setPadding(0, dp(10), 0, 0) })
+                recent.forEach { r -> addView(card { go(r) }.apply { addView(text(r, 15f, lines = 1)) }) }
+            }
+            addView(text("Tip: tap the mic on the keyboard to say the song name, if your watch keyboard has one.",
+                11f, C.SUB).apply { setPadding(0, dp(10), 0, 0) })
+        }
+    }
+
+    override fun onResume() {
+        super.onResume()
+        WatchState.addListener(listener)
+    }
+
+    override fun onPause() {
+        WatchState.removeListener(listener)
+        super.onPause()
+    }
+
+    private fun go(q: String) {
+        val t = q.trim()
+        if (t.isEmpty()) return
+        if (!WatchState.connected) {
+            toast("Phone not connected")
+            return
+        }
+        WPrefs.addSearch(this, t)
+        WatchService.instance?.send(JSONObject().put("t", "media_search").put("q", t))
+        toast("Searching…")
+    }
+
+    private fun showResult() {
+        val r = WatchState.searchResult ?: return
+        WatchState.searchResult = null
+        toast(r)
+        if (r.startsWith("Playing")) finish()
     }
 }
