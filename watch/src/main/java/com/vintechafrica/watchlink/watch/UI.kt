@@ -199,6 +199,15 @@ object WPrefs {
     fun setPopups(c: Context, on: Boolean) = p(c).edit().putBoolean("popups", on).apply()
     fun muted(c: Context): Set<String> = p(c).getStringSet("muted", emptySet())?.toSet() ?: emptySet()
     fun isMuted(c: Context, app: String) = app in muted(c)
+    fun ussdSim(c: Context) = p(c).getInt("ussdSim", 1)
+    fun setUssdSim(c: Context, v: Int) = p(c).edit().putInt("ussdSim", v).apply()
+    /** Last codes used, newest first. */
+    fun ussdHistory(c: Context): List<String> =
+        p(c).getString("ussdHist", "")!!.split("|").filter { it.isNotBlank() }
+    fun addUssd(c: Context, code: String) {
+        val l = (listOf(code) + ussdHistory(c).filter { it != code }).take(6)
+        p(c).edit().putString("ussdHist", l.joinToString("|")).apply()
+    }
     fun toggleMute(c: Context, app: String): Boolean {
         val s = muted(c).toMutableSet()
         val nowMuted = if (app in s) { s.remove(app); false } else { s.add(app); true }

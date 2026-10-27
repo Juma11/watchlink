@@ -259,6 +259,21 @@ class WatchService : Service() {
                 L.i("Reply: ${WatchState.lastReply}")
                 WatchState.changed()
             }
+            "sims" -> {
+                val arr = o.optJSONArray("list")
+                val list = ArrayList<Sim>()
+                if (arr != null) for (i in 0 until arr.length()) {
+                    val x = arr.optJSONObject(i) ?: continue
+                    list.add(Sim(x.optInt("slot"), x.optString("name")))
+                }
+                WatchState.sims = list
+                WatchState.changed()
+            }
+            "ussd_result" -> {
+                WatchState.ussd = UssdResult(o.optBoolean("ok"), o.optString("code"), o.optString("text"))
+                WatchState.ussdBusy = false
+                WatchState.changed()
+            }
             "find_state" -> {
                 WatchState.findingPhone = o.optBoolean("on")
                 WatchState.changed()

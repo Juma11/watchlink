@@ -291,3 +291,83 @@ object FindPhone {
 class FindStopReceiver : BroadcastReceiver() {
     override fun onReceive(c: Context, i: Intent) = FindPhone.stop(c)
 }
+
+/**
+ * One-shot USSD (balance checks and similar) on either SIM. Android lets apps read the first
+ * reply only; multi-step menus such as M-Pesa cannot be continued from an app, by design.
+ */
+object Ussd {
+    private val main = Handler(Looper.getMainLooper())
+
+    /** SIMs in the phone, so the watch can offer SIM 1 / SIM 2. */
+    @android.annotation.SuppressLint("MissingPermission")
+    fun sims(c: Context): JSONObject {
+        val arr = org.json.JSONArray()
+        try {
+            val sm = c.getSystemService(android.telephony.SubscriptionManager::class.java)
+            sm.activeSubscriptionInfoList?.sortedBy { it.simSlotIndex }?.forEach {
+                arr.put(JSONObject().put("slot", it.simSlotIndex + 1).put("name", it.carrierName?.toString().orEmpty()))
+            }
+        } catch (e: Exception) {
+            L.i("Cannot read SIMs: ${e.message}")
+        }
+        return JSONObject().put("t", "sims").put("list", arr)
+    }
+
+    @android.annotation.SuppressLint("MissingPermission")
+    fun run(c: Context, code: String, slot: Int) {
+        fun reply(ok: Boolean, text: String) {
+            LinkService.instance?.send(JSONObject().put("t", "ussd_result").put("ok", ok).put("code", code).put("text", text))
+        }
+        val clean = code.trim()
+        if (!Regex("^[*#][0-9*#]{1,40}#$").matches(clean)) {
+            reply(false, "Not a USSD code. It must start with * and end with #.")
+            return
+        }
+        if (c.checkSelfPermission(android.Manifest.permission.CALL_PHONE) != android.content.pm.PackageManager.PERMISSION_GRANTED) {
+            reply(false, "Phone permission missing on the phone app.")
+            return
+        }
+        var tm = c.getSystemService(android.telephony.TelephonyManager::class.java)
+        try {
+            val sm = c.getSystemService(android.telephony.SubscriptionManager::class.java)
+            val sub = sm.activeSubscriptionInfoList?.firstOrNull { it.simSlotIndex == slot - 1 }
+            if (sub != null) tm = tm.createForSubscriptionId(sub.subscriptionId)
+        } catch (e: Exception) {
+            L.i("SIM pick failed, using default: ${e.message}")
+        }
+
+        var done = false
+        val timeout = Runnable {
+            if (!done) {
+                done = true
+                reply(false, "No answer from the network after 30 s.")
+            }
+        }
+        main.postDelayed(timeout, 30_000)
+        try {
+            tm.sendUssdRequest(clean, object : android.telephony.TelephonyManager.UssdResponseCallback() {
+                override fun onReceiveUssdResponse(t: android.telephony.TelephonyManager, req: String, resp: CharSequence) {
+                    if (done) return
+                    done = true
+                    main.removeCallbacks(timeout)
+                    reply(true, resp.toString())
+                    L.i("USSD $req answered")
+                }
+
+                override fun onReceiveUssdResponseFailed(t: android.telephony.TelephonyManager, req: String, failureCode: Int) {
+                    if (done) return
+                    done = true
+                    main.removeCallbacks(timeout)
+                    reply(false, "Network refused the code (error $failureCode). Menu codes like *334# only work on the phone.")
+                    L.i("USSD $req failed: $failureCode")
+                }
+            }, main)
+            L.i("USSD $clean sent on SIM $slot")
+        } catch (e: Exception) {
+            done = true
+            main.removeCallbacks(timeout)
+            reply(false, "Phone could not send it: ${e.message}")
+        }
+    }
+}

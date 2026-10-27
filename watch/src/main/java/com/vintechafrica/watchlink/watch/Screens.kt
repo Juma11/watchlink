@@ -110,23 +110,15 @@ class MainActivity : Activity() {
             else "Nothing playing", C.PURPLE
         ) { startActivity(Intent(this, MusicActivity::class.java)) })
 
-        body.addView(tile("👤", "Contacts",
-            if (WatchState.contacts.isEmpty()) "Tap to sync" else "${WatchState.contacts.size} contacts", C.GREEN
+        body.addView(tile("👤", "Calls",
+            if (WatchState.contacts.isEmpty()) "Keypad · tap to sync contacts" else "Keypad · ${WatchState.contacts.size} contacts", C.GREEN
         ) { startActivity(Intent(this, ContactsActivity::class.java)) })
 
         val finding = WatchState.findingPhone
-        body.addView(tile("📳", if (finding) "Stop ringing phone" else "Find phone",
-            if (finding) "Phone is ringing" else "Ring the phone, even on silent",
-            if (finding) C.RED else C.CARD2) {
-            if (!WatchState.connected) {
-                toast("Phone not connected")
-                return@tile
-            }
-            WatchService.instance?.send(JSONObject().put("t", if (finding) "find_stop" else "find"))
-        })
-
-        body.addView(tile("🔋", "Battery", "${b.pct}% · ${"%.0f".format(b.tempC)}°C", C.ORANGE) {
-            startActivity(Intent(this, BatteryActivity::class.java))
+        body.addView(tile("🧰", "Tools",
+            if (finding) "Phone is ringing" else "Find phone · USSD · Battery ${b.pct}%",
+            if (finding) C.RED else C.ORANGE) {
+            startActivity(Intent(this, ToolsActivity::class.java))
         })
 
         body.addView(tile("⚙", "Settings", null, C.CARD2) {
@@ -499,8 +491,17 @@ class ContactsActivity : Activity() {
                 toast("Asking phone…")
             }
         }
+        val keypad = pill("Keypad", C.GREEN).apply {
+            isClickable = true
+            setOnClickListener { startActivity(Intent(this@ContactsActivity, DialerActivity::class.java)) }
+        }
+        val right = hbox().apply {
+            addView(keypad)
+            addView(android.view.View(this@ContactsActivity), LinearLayout.LayoutParams(dp(6), 1))
+            addView(sync)
+        }
         screen {
-            addView(header("Contacts", sync))
+            addView(header("Calls", right))
             search = EditText(this@ContactsActivity).apply {
                 hint = "Search"
                 textSize = 15f

@@ -44,6 +44,8 @@ data class Media(
     val playing: Boolean = false, val vol: Int = 0, val volMax: Int = 15
 )
 data class Contact(val name: String, val phone: String)
+data class Sim(val slot: Int, val name: String)
+data class UssdResult(val ok: Boolean, val code: String, val text: String)
 
 /** Everything the screens show. Updated by WatchService, read by activities. */
 object WatchState {
@@ -58,6 +60,9 @@ object WatchState {
     @Volatile var media = Media()
     @Volatile var findingPhone = false
     @Volatile var lastReply: String? = null   // result text of the last reply, shown once
+    @Volatile var sims: List<Sim> = emptyList()
+    @Volatile var ussd: UssdResult? = null
+    @Volatile var ussdBusy = false
     private val notifs = LinkedHashMap<String, Notif>()
     private val listeners = CopyOnWriteArrayList<() -> Unit>()
     private val main = Handler(Looper.getMainLooper())

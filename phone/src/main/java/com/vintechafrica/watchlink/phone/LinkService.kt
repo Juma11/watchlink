@@ -172,6 +172,7 @@ class LinkService : Service() {
         lastCall?.let { send(it) }
         NotifListener.snapshot().forEach { send(it.put("sync", true)) }
         Media.resend()
+        send(Ussd.sims(this))
 
         try {
             val reader = BufferedReader(InputStreamReader(s.inputStream, Charsets.UTF_8))
@@ -212,6 +213,8 @@ class LinkService : Service() {
             "reply" -> Reply.send(this, o.optString("key"), o.optString("text"))
             "find" -> FindPhone.start(this)
             "find_stop" -> FindPhone.stop(this)
+            "ussd" -> Ussd.run(this, o.optString("code"), o.optInt("sim", 1))
+            "get_sims" -> send(Ussd.sims(this))
             else -> L.i("Unknown message: ${o.optString("t")}")
         }
     }
