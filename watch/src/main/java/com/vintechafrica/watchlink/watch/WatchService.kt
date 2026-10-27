@@ -161,6 +161,7 @@ class WatchService : Service() {
 
         send(JSONObject().put("t", "hello").put("bat", Bat.read(this).pct).put("model", Build.MODEL))
         if (WatchState.contacts.isEmpty()) send(JSONObject().put("t", "get_contacts"))
+        send(JSONObject().put("t", "get_calls"))
 
         try {
             val reader = BufferedReader(InputStreamReader(s.inputStream, Charsets.UTF_8))
@@ -257,6 +258,16 @@ class WatchService : Service() {
             "reply_result" -> {
                 WatchState.lastReply = if (o.optBoolean("ok")) "Sent" else "Not sent: ${o.optString("why")}"
                 L.i("Reply: ${WatchState.lastReply}")
+                WatchState.changed()
+            }
+            "calls" -> {
+                val arr = o.optJSONArray("list")
+                val list = ArrayList<CallEntry>()
+                if (arr != null) for (i in 0 until arr.length()) {
+                    val x = arr.optJSONObject(i) ?: continue
+                    list.add(CallEntry(x.optString("n"), x.optString("p"), x.optString("ty"), x.optLong("d"), x.optLong("s")))
+                }
+                WatchState.calls = list
                 WatchState.changed()
             }
             "search_result" -> {

@@ -275,3 +275,84 @@ class UssdActivity : Activity() {
         }
     }
 }
+
+/** Call history from the phone. Tap an entry to call back. */
+class RecentsActivity : Activity() {
+    private lateinit var body: LinearLayout
+    private var selected: CallEntry? = null
+    private val listener: () -> Unit = { render() }
+
+    override fun onCreate(savedInstanceState: Bundle?) {
+        super.onCreate(savedInstanceState)
+        body = screen {}
+    }
+
+    override fun onResume() {
+        super.onResume()
+        WatchState.addListener(listener)
+        WatchService.instance?.send(JSONObject().put("t", "get_calls"))
+        render()
+    }
+
+    override fun onPause() {
+        WatchState.removeListener(listener)
+        super.onPause()
+    }
+
+    private fun render() {
+        body.removeAllViews()
+        body.addView(header("Recent calls"))
+        val list = WatchState.calls
+        if (list.isEmpty()) {
+            body.addView(text(if (WatchState.connected) "Loading…" else "Phone not connected", 14f, C.SUB)
+                .apply { setPadding(0, dp(20), 0, 0) })
+            return
+        }
+        list.forEach { c -> body.addView(row(c)) }
+    }
+
+    private fun row(c: CallEntry): LinearLayout {
+        val (icon, color, label) = when (c.type) {
+            "in" -> Triple("↙", C.GREEN, "Incoming")
+            "out" -> Triple("↗", C.BLUE, "Outgoing")
+            "missed" -> Triple("↙", C.RED, "Missed")
+            "rejected" -> Triple("✕", C.ORANGE, "Rejected")
+            "blocked" -> Triple("⊘", C.SUB, "Blocked")
+            else -> Triple("•", C.SUB, "Call")
+        }
+        val who = c.name.ifEmpty { c.phone.ifEmpty { "Private number" } }
+        val open = selected == c
+        val box = card {
+            selected = if (open) null else c
+            render()
+        }
+        box.addView(hbox().apply {
+            addView(text(icon, 18f, color, bold = true).apply {
+                gravity = Gravity.CENTER
+                layoutParams = LinearLayout.LayoutParams(dp(26), dp(26))
+            })
+            addView(vbox().apply {
+                setPadding(dp(8), 0, 0, 0)
+                layoutParams = LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f)
+                addView(text(who, 15f, if (c.type == "missed") C.RED else C.TEXT, bold = true, lines = 1))
+                val dur = if (c.secs > 0) " · ${c.secs / 60}:${"%02d".format(c.secs % 60)}" else ""
+                addView(text("$label$dur", 12f, C.SUB, lines = 1))
+            })
+            addView(text(timeAgo(c.date), 12f, C.SUB))
+        })
+        if (open && c.phone.isNotEmpty()) {
+            if (c.name.isNotEmpty()) box.addView(text(c.phone, 12f, C.SUB).apply { setPadding(dp(34), dp(2), 0, 0) })
+            box.addView(action("Call back", C.GREEN) {
+                if (!WatchState.connected) {
+                    toast("Phone not connected")
+                    return@action
+                }
+                WatchService.instance?.sendCmd("dial", c.phone)
+                toast("Calling on phone…")
+                selected = null
+                render()
+            })
+        }
+        return box
+    }
+}

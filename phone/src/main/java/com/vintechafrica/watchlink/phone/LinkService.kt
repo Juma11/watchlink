@@ -208,6 +208,7 @@ class LinkService : Service() {
             "cmd" -> CallControl.run(this, o.optString("a"), o.optString("num"))
             "notif_dismiss" -> NotifListener.dismiss(o.optString("key"))
             "get_contacts" -> Thread({ sendContacts() }, "wl-contacts").start()
+            "get_calls" -> Thread({ sendCalls() }, "wl-calls").start()
             "media_cmd" -> Media.command(o.optString("a"))
             "media_get" -> Media.resend()
             "media_search" -> Media.search(o.optString("q"))
@@ -314,6 +315,8 @@ class LinkService : Service() {
         lastCall = if (st == "idle") null else o
         L.i("Call $st${if (useVoip) " via ${v!!.app}" else ""} ${name.ifEmpty { num }}")
         send(o)
+        // The phone writes the call log a moment after the call ends.
+        if (st == "idle") android.os.Handler(mainLooper).postDelayed({ Thread({ sendCalls() }, "wl-calls").start() }, 2500)
     }
 
     private fun lookupName(num: String): String {
@@ -328,6 +331,49 @@ class LinkService : Service() {
     }
 
     // ---------- contacts ----------
+
+    /** Last 60 calls: name, number, type, time, duration. */
+    private fun sendCalls() {
+        if (!has(Manifest.permission.READ_CALL_LOG)) {
+            L.i("No call log permission")
+            return
+        }
+        val arr = JSONArray()
+        try {
+            contentResolver.query(
+                android.provider.CallLog.Calls.CONTENT_URI,
+                arrayOf(
+                    android.provider.CallLog.Calls.CACHED_NAME,
+                    android.provider.CallLog.Calls.NUMBER,
+                    android.provider.CallLog.Calls.TYPE,
+                    android.provider.CallLog.Calls.DATE,
+                    android.provider.CallLog.Calls.DURATION
+                ),
+                null, null,
+                android.provider.CallLog.Calls.DATE + " DESC"
+            )?.use { c ->
+                while (c.moveToNext() && arr.length() < 60) {
+                    val type = when (c.getInt(2)) {
+                        android.provider.CallLog.Calls.INCOMING_TYPE -> "in"
+                        android.provider.CallLog.Calls.OUTGOING_TYPE -> "out"
+                        android.provider.CallLog.Calls.MISSED_TYPE -> "missed"
+                        android.provider.CallLog.Calls.REJECTED_TYPE -> "rejected"
+                        android.provider.CallLog.Calls.BLOCKED_TYPE -> "blocked"
+                        else -> "other"
+                    }
+                    arr.put(JSONObject()
+                        .put("n", c.getString(0).orEmpty())
+                        .put("p", c.getString(1).orEmpty())
+                        .put("ty", type)
+                        .put("d", c.getLong(3))
+                        .put("s", c.getLong(4)))
+                }
+            }
+        } catch (e: Exception) {
+            L.i("Call log read failed: ${e.message}")
+        }
+        send(JSONObject().put("t", "calls").put("list", arr))
+    }
 
     private fun sendContacts() {
         if (!has(Manifest.permission.READ_CONTACTS)) {

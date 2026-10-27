@@ -111,7 +111,10 @@ class MainActivity : Activity() {
         ) { startActivity(Intent(this, MusicActivity::class.java)) })
 
         body.addView(tile("👤", "Calls",
-            if (WatchState.contacts.isEmpty()) "Keypad · tap to sync contacts" else "Keypad · ${WatchState.contacts.size} contacts", C.GREEN
+            WatchState.missedToday().let { missed ->
+                if (missed > 0) "$missed missed call${if (missed > 1) "s" else ""}"
+                else if (WatchState.contacts.isEmpty()) "Keypad · recent · contacts" else "Keypad · recent · ${WatchState.contacts.size} contacts"
+            }, if (WatchState.missedToday() > 0) C.RED else C.GREEN
         ) { startActivity(Intent(this, ContactsActivity::class.java)) })
 
         val finding = WatchState.findingPhone
@@ -491,17 +494,17 @@ class ContactsActivity : Activity() {
                 toast("Asking phone…")
             }
         }
-        val keypad = pill("Keypad", C.GREEN).apply {
-            isClickable = true
-            setOnClickListener { startActivity(Intent(this@ContactsActivity, DialerActivity::class.java)) }
-        }
-        val right = hbox().apply {
-            addView(keypad)
-            addView(android.view.View(this@ContactsActivity), LinearLayout.LayoutParams(dp(6), 1))
-            addView(sync)
-        }
         screen {
-            addView(header("Calls", right))
+            addView(header("Calls", sync))
+            addView(hbox().apply {
+                addView(action("⌨ Keypad", C.GREEN) {
+                    startActivity(Intent(this@ContactsActivity, DialerActivity::class.java))
+                }.apply { (layoutParams as LinearLayout.LayoutParams).apply { width = 0; weight = 1f; rightMargin = dp(4) } })
+                val missed = WatchState.missedToday()
+                addView(action(if (missed > 0) "🕘 Recent · $missed" else "🕘 Recent", if (missed > 0) C.RED else C.BLUE) {
+                    startActivity(Intent(this@ContactsActivity, RecentsActivity::class.java))
+                }.apply { (layoutParams as LinearLayout.LayoutParams).apply { width = 0; weight = 1f; leftMargin = dp(4) } })
+            })
             search = EditText(this@ContactsActivity).apply {
                 hint = "Search"
                 textSize = 15f

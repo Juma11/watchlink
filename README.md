@@ -7,6 +7,7 @@ Bluetooth bridge between a Samsung phone and the HainoTeko FG-3 Android watch.
 - Contacts synced from the phone, tap to call (the phone places the call)
 - Music remote: title, artist, play/pause, next, previous, volume, search by song or artist
 - Quick replies and typed replies to WhatsApp, SMS and other apps with a Reply button
+- Call history with missed-call count, tap to call back
 - Keypad for numbers not in contacts; a comma waits 2 s then sends menu digits
 - One-shot USSD (balance, info codes) on SIM 1 or SIM 2, answer on the watch
 - Find my phone: rings the phone at full alarm volume, even on silent, for 30 s

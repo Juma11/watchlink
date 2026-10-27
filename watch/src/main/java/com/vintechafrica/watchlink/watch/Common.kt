@@ -45,6 +45,7 @@ data class Media(
 )
 data class Contact(val name: String, val phone: String)
 data class Sim(val slot: Int, val name: String)
+data class CallEntry(val name: String, val phone: String, val type: String, val date: Long, val secs: Long)
 data class UssdResult(val ok: Boolean, val code: String, val text: String)
 
 /** Everything the screens show. Updated by WatchService, read by activities. */
@@ -64,6 +65,13 @@ object WatchState {
     @Volatile var ussd: UssdResult? = null
     @Volatile var ussdBusy = false
     @Volatile var searchResult: String? = null
+    @Volatile var calls: List<CallEntry> = emptyList()
+
+    /** Missed calls in the last 24 hours, for the home tile. */
+    fun missedToday(): Int {
+        val since = System.currentTimeMillis() - 86_400_000L
+        return calls.count { it.type == "missed" && it.date > since }
+    }
     private val notifs = LinkedHashMap<String, Notif>()
     private val listeners = CopyOnWriteArrayList<() -> Unit>()
     private val main = Handler(Looper.getMainLooper())
